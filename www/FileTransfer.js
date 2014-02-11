@@ -22,7 +22,7 @@
 var argscheck = require('cordova/argscheck'),
     exec = require('cordova/exec'),
     FileTransferError = require('./FileTransferError'),
-    ProgressEvent = require('org.apache.cordova.core.file.ProgressEvent');
+    ProgressEvent = require('org.apache.cordova.file.ProgressEvent');
 
 function newProgressEvent(result) {
     var pe = new ProgressEvent();
@@ -42,7 +42,7 @@ function getBasicAuthHeader(urlString) {
 
         var credentials = null;
         var protocol = url.protocol + "//";
-        var origin = protocol + url.host;
+        var origin = protocol + url.host.replace(":" + url.port, ""); // Windows 8 (IE10) append :80 or :443 to url.host
 
         // check whether there are the username:password credentials in the url
         if (url.href.indexOf(origin) !== 0) { // credentials found
@@ -175,15 +175,16 @@ FileTransfer.prototype.download = function(source, target, successCallback, erro
         } else if (successCallback) {
             var entry = null;
             if (result.isDirectory) {
-                entry = new (require('org.apache.cordova.core.file.DirectoryEntry'))();
+                entry = new (require('org.apache.cordova.file.DirectoryEntry'))();
             }
             else if (result.isFile) {
-                entry = new (require('org.apache.cordova.core.file.FileEntry'))();
+                entry = new (require('org.apache.cordova.file.FileEntry'))();
             }
             entry.isDirectory = result.isDirectory;
             entry.isFile = result.isFile;
             entry.name = result.name;
             entry.fullPath = result.fullPath;
+            entry.filesystem = new FileSystem(result.filesystem == window.PERSISTENT ? 'persistent' : 'temporary');
             successCallback(entry);
         }
     };

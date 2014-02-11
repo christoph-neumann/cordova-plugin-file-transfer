@@ -21,22 +21,18 @@
 
 
 var FileTransferError = require('./FileTransferError'),
-    FileUploadResult = require('org.apache.cordova.core.file.FileUploadResult'),
-    FileEntry = require('org.apache.cordova.core.file.FileEntry');
+    FileUploadResult = require('org.apache.cordova.file.FileUploadResult'),
+    FileEntry = require('org.apache.cordova.file.FileEntry');
 
 module.exports = {
 
     upload:function(successCallback, error, options) {
         var filePath = options[0];
         var server = options[1];
-
-
-        var win = function (fileUploadResult) {
-            successCallback(fileUploadResult);
-        };
+        var headers = options[8] || {};
 
         if (filePath === null || typeof filePath === 'undefined') {
-            error(FileTransferError.FILE_NOT_FOUND_ERR);
+            error && error(FileTransferError.FILE_NOT_FOUND_ERR);
             return;
         }
 
@@ -49,7 +45,7 @@ module.exports = {
                 var blob = MSApp.createBlobFromRandomAccessStream(storageFile.contentType, stream);
                 var formData = new FormData();
                 formData.append("source\";filename=\"" + storageFile.name + "\"", blob);
-                WinJS.xhr({ type: "POST", url: server, data: formData }).then(function (response) {
+                WinJS.xhr({ type: "POST", url: server, data: formData, headers: headers }).then(function (response) {
                     var code = response.status;
                     storageFile.getBasicPropertiesAsync().done(function (basicProperties) {
 
@@ -57,26 +53,34 @@ module.exports = {
                             var dataReader = Windows.Storage.Streams.DataReader.fromBuffer(buffer);
                             var fileContent = dataReader.readString(buffer.length);
                             dataReader.close();
-                            win(new FileUploadResult(basicProperties.size, code, fileContent));
-
+                            var ftResult = new FileUploadResult(basicProperties.size, code, fileContent);
+                            // for now we explicitly write the bytesSent,responseCode,result 
+                            // in case cordova-plugin-file is not yet updated. -jm
+                            ftResult.bytesSent = basicProperties.size;
+                            ftResult.responseCode = code;
+                            ftResult.response = fileContent;
+                            successCallback && successCallback(ftResult);
                         });
 
                     });
                 }, function () {
-                    error(FileTransferError.INVALID_URL_ERR);
+                    error && error(FileTransferError.INVALID_URL_ERR);
                 });
             });
 
-        },function(){error(FileTransferError.FILE_NOT_FOUND_ERR);});
+        },function() {
+            error && error(FileTransferError.FILE_NOT_FOUND_ERR);
+        });
     },
 
-    download:function(win, error, options) {
+    download:function(successCallback, error, options) {
         var source = options[0];
         var target = options[1];
+        var headers = options[4] || {};
 
 
         if (target === null || typeof target === undefined) {
-            error(FileTransferError.FILE_NOT_FOUND_ERR);
+            error && error(FileTransferError.FILE_NOT_FOUND_ERR);
             return;
         }
         if (String(target).substr(0, 8) == "file:///") {
@@ -85,7 +89,7 @@ module.exports = {
         var path = target.substr(0, String(target).lastIndexOf("\\"));
         var fileName = target.substr(String(target).lastIndexOf("\\") + 1);
         if (path === null || fileName === null) {
-            error(FileTransferError.FILE_NOT_FOUND_ERR);
+            error && error(FileTransferError.FILE_NOT_FOUND_ERR);
             return;
         }
 
@@ -96,15 +100,21 @@ module.exports = {
             storageFolder.createFileAsync(fileName, Windows.Storage.CreationCollisionOption.generateUniqueName).then(function (storageFile) {
                 var uri = Windows.Foundation.Uri(source);
                 var downloader = new Windows.Networking.BackgroundTransfer.BackgroundDownloader();
+
+                for (var header in headers) {
+                    downloader.setRequestHeader(header, headers[header]);
+                }
+
+
                 download = downloader.createDownload(uri, storageFile);
                 download.startAsync().then(function () {
-                    win(new FileEntry(storageFile.name, storageFile.path));
+                    successCallback && successCallback(new FileEntry(storageFile.name, storageFile.path));
                 }, function () {
-                    error(FileTransferError.INVALID_URL_ERR);
+                    error && error(FileTransferError.INVALID_URL_ERR);
                 });
             });
         });
     }
 };
 
-require("cordova/commandProxy").add("FileTransfer",module.exports);
+require("cordova/windows8/commandProxy").add("FileTransfer",module.exports);
